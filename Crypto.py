@@ -1,63 +1,39 @@
 import hashlib
 import base64
 import os
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# ------------------- KEY VALIDATION -------------------
-def key_length(key, min_length=8):
-    if len(key) < min_length:
-        raise ValueError(f"Key must be more than {min_length} characters long. Current length: {len(key)}")
-    return True
-
-# ------------------- AES-256 ENCRYPTION -------------------
-def encrypt_aes256(plaintext, key_str):
-    key = hashlib.sha256(key_str.encode()).digest()
-    iv = os.urandom(16)
+class Crypto:
+    def __init__(self, key):
+        self.key = key
     
-    padder = padding.PKCS7(128).padder()
-    padded_data = padder.update(plaintext.encode()) + padder.finalize()
-    
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+    def encrypt_aes(self, plaintext):
+        key = hashlib.sha256(self.key.encode()).digest()
+        nonce = os.urandom(12)
+        aesgcm = AESGCM(key)
+        ciphertext = aesgcm.encrypt(nonce, plaintext.encode(), None)
+        return base64.urlsafe_b64encode(nonce + ciphertext).decode()
 
-    return base64.urlsafe_b64encode(iv + ciphertext).decode()
+    def decrypt_aes(self, ciphertext):
+        try:
+            key = hashlib.sha256(self.key.encode()).digest()
+            raw = base64.urlsafe_b64decode(ciphertext)
+            nonce = raw[:12]
+            encrypted_data = raw[12:]
+            aesgcm = AESGCM(key)
+            plaintext = aesgcm.decrypt(nonce, encrypted_data, None)
+            return plaintext.decode()
+        except Exception:
+            return None
 
-# ------------------- AES-256 DECRYPTION -------------------
-def decrypt_aes256(ciphertext_b64, key_str):
-    key = hashlib.sha256(key_str.encode()).digest()
-
-    raw = base64.urlsafe_b64decode(ciphertext_b64)
-    iv, ciphertext = raw[:16], raw[16:]
-    
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    decryptor = cipher.decryptor()
-    
-    padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-    unpadder = padding.PKCS7(128).unpadder()
-    plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
-    
-    return plaintext.decode()
-
-# ------------------- MAIN -------------------
-print("=== AES-256 Encryption / Decryption Tool ===\n")
-key = input("Enter encryption key: ").strip()
-
-try:
-    key_length(key)
-    print("✓ Key validation passed\n")
-except ValueError as e:
-    print(f"❌ Error: {e}")
-    exit(1)
-
-text = input("Enter text to encrypt: ").strip()
-
-encrypted = encrypt_aes256(text, key)
-print("\n🔒 Encrypted (Base64):")
-print(encrypted)
-
-decrypted = decrypt_aes256(encrypted, key)
-print("\n🔓 Decrypted back:")
-print(decrypted)
+if __name__ == "__main__":
+    key = input("Enter encryption key (min 8 chars): ")
+    if len(key) < 8:
+        print("Error: Key must be at least 8 characters long.")
+        exit(1)
+    crypto = Crypto(key)
+    plaintext = input("Enter text to encrypt: ")
+    encrypted = crypto.encrypt_aes(plaintext)
+    print("\nEncrypted Output:", encrypted)
+    decrypted = crypto.decrypt_aes(encrypted)
+    print("\nDecrypted Output:", decrypted)
